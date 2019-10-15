@@ -125,23 +125,40 @@ class SvgUri extends Component{
     this.isComponentMounted = false
   }
 
-  async fetchSVGData(uri){
-    let responseXML = null;
+  async fetchSVGData(uri) {
+    let responseXML = null, error = null;
     try {
       const response = await fetch(uri);
       responseXML = await response.text();
     } catch(e) {
+      error = e;
       console.error("ERROR SVG", e);
     } finally {
       if (this.isComponentMounted) {
-        this.setState({svgXmlData:responseXML});
+        this.setState({ svgXmlData: responseXML }, () => {
+          const { onLoad } = this.props;
+          if (onLoad && !error) {
+            onLoad();
+          }
+        });
       }
     }
 
     return responseXML;
   }
 
+  // Remove empty strings from children array
+  trimElementChilden(children) {
+    for (child of children) {
+      if (typeof child === 'string') { 
+        if (child.trim().length === 0) 
+          children.splice(children.indexOf(child), 1);
+      }
+    }
+  }
+
   createSVGElement(node, childs){
+    this.trimElementChilden(childs);
     let componentAtts = {};
     const i = ind++;
     switch (node.nodeName) {
@@ -192,9 +209,6 @@ class SvgUri extends Component{
       return <Polyline key={i} {...componentAtts}>{childs}</Polyline>;
     case 'text':
       componentAtts = this.obtainComponentAtts(node, TEXT_ATTS);
-      if (componentAtts.y) {
-        componentAtts.y = fixYPosition(componentAtts.y, node)
-      }
       return <Text key={i} {...componentAtts}>{childs}</Text>;
     case 'tspan':
       componentAtts = this.obtainComponentAtts(node, TEXT_ATTS);
@@ -272,7 +286,7 @@ class SvgUri extends Component{
       const inputSVG = this.state.svgXmlData.substring(
         this.state.svgXmlData.indexOf("<svg "),
         (this.state.svgXmlData.indexOf("</svg>") + 6)
-      );
+      ).replace(/<!-(.*?)->/g, '');
 
       const doc = new xmldom.DOMParser().parseFromString(inputSVG);
 
@@ -297,6 +311,7 @@ SvgUri.propTypes = {
   svgXmlData: PropTypes.string,
   source: PropTypes.any,
   fill: PropTypes.string,
+  onLoad: PropTypes.func,
   fillAll: PropTypes.bool
 }
 
