@@ -1,24 +1,24 @@
-import React, {Component} from "react";
-import {View} from 'react-native';
+import React, { Component } from "react";
+import { View } from 'react-native';
 import PropTypes from 'prop-types'
 import xmldom from 'xmldom';
 import resolveAssetSource from 'react-native/Libraries/Image/resolveAssetSource';
 
-import Svg,{
-    Circle,
-    Ellipse,
-    G ,
-    LinearGradient,
-    RadialGradient,
-    Line,
-    Path,
-    Polygon,
-    Polyline,
-    Rect,
-    Text,
-    TSpan,
-    Defs,
-    Stop
+import Svg, {
+  Circle,
+  Defs,
+  Ellipse,
+  G,
+  Line,
+  LinearGradient,
+  Path,
+  Polygon,
+  Polyline,
+  RadialGradient,
+  Rect,
+  Stop,
+  Text,
+  TSpan
 } from 'react-native-svg';
 
 import * as utils from './utils';
@@ -60,14 +60,15 @@ const POLYGON_ATTS = ['points'];
 const POLYLINE_ATTS = ['points'];
 
 const COMMON_ATTS = ['fill', 'fillOpacity', 'stroke', 'strokeWidth', 'strokeOpacity', 'opacity',
-    'strokeLinecap', 'strokeLinejoin', 'transform', 'clipPath',
-    'strokeDasharray', 'strokeDashoffset', 'x', 'y', 'rotate', 'scale', 'origin', 'originX', 'originY'];
+  'strokeLinecap', 'strokeLinejoin', 'transform', 'clipPath',
+  'strokeDasharray', 'strokeDashoffset', 'x', 'y', 'rotate', 'scale', 'origin', 'originX', 'originY'];
 
 let ind = 0;
 
-function fixYPosition (y, node) {
+function fixYPosition(y, node) {
   if (node.attributes) {
-    const fontSizeAttr = Object.keys(node.attributes).find(a => node.attributes[a].name === 'font-size');
+    const fontSizeAttr = Object.keys(node.attributes)
+    .find(a => node.attributes[a].name === 'font-size');
     if (fontSizeAttr) {
       return '' + (parseFloat(y) - parseFloat(node.attributes[fontSizeAttr].value));
     }
@@ -78,178 +79,150 @@ function fixYPosition (y, node) {
   return fixYPosition(y, node.parentNode)
 }
 
-class SvgUri extends Component{
+// Remove empty strings from children array
+function trimElementChilden(children) {
+  for (child of children) {
+    if (typeof child === 'string') {
+      if (child.trim().length === 0)
+        children.splice(children.indexOf(child), 1);
+    }
+  }
+}
 
-  constructor(props){
-    super(props);
+function SvgUri(props) {
+  const [state, setState] = React.useState({ fill: props.fill, svgXmlData: props.svgXmlData })
+  const isComponentMounted = React.useRef()
 
-    this.state = {fill: props.fill, svgXmlData: props.svgXmlData};
-
-    this.createSVGElement     = this.createSVGElement.bind(this);
-    this.obtainComponentAtts  = this.obtainComponentAtts.bind(this);
-    this.inspectNode          = this.inspectNode.bind(this);
-    this.fetchSVGData         = this.fetchSVGData.bind(this);
-
-    this.isComponentMounted   = false;
-
-    // Gets the image data from an URL or a static file
-    if (props.source) {
-      const source = resolveAssetSource(props.source) || {};
+  // Gets the image data from an URL or a static file
+  const source = props.source ? resolveAssetSource(props.source) || {} : {};
+  React.useEffect(() => {
+    if (source) {
       this.fetchSVGData(source.uri);
     }
-  }
+    isComponentMounted.current = true;
+    return () => isComponentMounted.current = false
+  }, [source])
 
-  componentWillMount() {
-    this.isComponentMounted = true;
-  }
-
-  componentWillReceiveProps (nextProps){
-    if (nextProps.source) {
-      const source = resolveAssetSource(nextProps.source) || {};
-      const oldSource = resolveAssetSource(this.props.source) || {};
-      if(source.uri !== oldSource.uri){
-        this.fetchSVGData(source.uri);
-      }
+  React.useEffect(() => {
+    const { onLoad } = this.props;
+    if (state.svgXmlData && onLoad && !error) {
+      onLoad();
     }
+  }, [state.svgXmlData])
 
-    if (nextProps.svgXmlData !== this.props.svgXmlData) {
-      this.setState({ svgXmlData: nextProps.svgXmlData });
-    }
+  React.useEffect(() => setState({ ...state, svgXmlData: props.svgXmlData }), [props.svgXmlData])
+  React.useEffect(() => setState({ ...state, fill: props.fill }), [props.fill])
 
-    if (nextProps.fill !== this.props.fill) {
-      this.setState({ fill: nextProps.fill });
-    }
-  }
-
-  componentWillUnmount() {
-    this.isComponentMounted = false
-  }
-
-  async fetchSVGData(uri) {
+  async function fetchSVGData(uri) {
     let responseXML = null, error = null;
     try {
       const response = await fetch(uri);
       responseXML = await response.text();
-    } catch(e) {
+    }
+    catch (e) {
       error = e;
       console.error("ERROR SVG", e);
     } finally {
-      if (this.isComponentMounted) {
-        this.setState({ svgXmlData: responseXML }, () => {
-          const { onLoad } = this.props;
-          if (onLoad && !error) {
-            onLoad();
-          }
-        });
+      if (isComponentMounted.current) {
+        setState({ ...state, svgXmlData: responseXML });
       }
     }
-
     return responseXML;
   }
 
-  // Remove empty strings from children array
-  trimElementChilden(children) {
-    for (child of children) {
-      if (typeof child === 'string') { 
-        if (child.trim().length === 0) 
-          children.splice(children.indexOf(child), 1);
-      }
-    }
-  }
-
-  createSVGElement(node, childs){
-    this.trimElementChilden(childs);
+  function createSVGElement(node, childs) {
+    trimElementChilden(childs);
     let componentAtts = {};
     const i = ind++;
     switch (node.nodeName) {
-    case 'svg':
-      componentAtts = this.obtainComponentAtts(node, SVG_ATTS);
-      if (this.props.width) {
-        componentAtts.width = this.props.width;
-      }
-      if (this.props.height) {
-        componentAtts.height = this.props.height;
-      }
+      case 'svg':
+        componentAtts = obtainComponentAtts(node, SVG_ATTS);
+        if (props.width) {
+          componentAtts.width = props.width;
+        }
+        if (props.height) {
+          componentAtts.height = props.height;
+        }
 
-      return <Svg key={i} {...componentAtts}>{childs}</Svg>;
-    case 'g':
-      componentAtts = this.obtainComponentAtts(node, G_ATTS);
-      return <G key={i} {...componentAtts}>{childs}</G>;
-    case 'path':
-      componentAtts = this.obtainComponentAtts(node, PATH_ATTS);
-      return <Path key={i} {...componentAtts}>{childs}</Path>;
-    case 'circle':
-      componentAtts = this.obtainComponentAtts(node, CIRCLE_ATTS);
-      return <Circle key={i} {...componentAtts}>{childs}</Circle>;
-    case 'rect':
-      componentAtts = this.obtainComponentAtts(node, RECT_ATTS);
-      return <Rect key={i} {...componentAtts}>{childs}</Rect>;
-    case 'line':
-      componentAtts = this.obtainComponentAtts(node, LINE_ATTS);
-      return <Line key={i} {...componentAtts}>{childs}</Line>;
-    case 'defs':
-      return <Defs key={i}>{childs}</Defs>;
-    case 'linearGradient':
-      componentAtts = this.obtainComponentAtts(node, LINEARG_ATTS);
-      return <LinearGradient key={i} {...componentAtts}>{childs}</LinearGradient>;
-    case 'radialGradient':
-      componentAtts = this.obtainComponentAtts(node, RADIALG_ATTS);
-      return <RadialGradient key={i} {...componentAtts}>{childs}</RadialGradient>;
-    case 'stop':
-      componentAtts = this.obtainComponentAtts(node, STOP_ATTS);
-      return <Stop key={i} {...componentAtts}>{childs}</Stop>;
-    case 'ellipse':
-      componentAtts = this.obtainComponentAtts(node, ELLIPSE_ATTS);
-      return <Ellipse key={i} {...componentAtts}>{childs}</Ellipse>;
-    case 'polygon':
-      componentAtts = this.obtainComponentAtts(node, POLYGON_ATTS);
-      return <Polygon key={i} {...componentAtts}>{childs}</Polygon>;
-    case 'polyline':
-      componentAtts = this.obtainComponentAtts(node, POLYLINE_ATTS);
-      return <Polyline key={i} {...componentAtts}>{childs}</Polyline>;
-    case 'text':
-      componentAtts = this.obtainComponentAtts(node, TEXT_ATTS);
-      return <Text key={i} {...componentAtts}>{childs}</Text>;
-    case 'tspan':
-      componentAtts = this.obtainComponentAtts(node, TEXT_ATTS);
-      if (componentAtts.y) {
-        componentAtts.y = fixYPosition(componentAtts.y, node)
-      }
-      return <TSpan key={i} {...componentAtts}>{childs}</TSpan>;
-    default:
-      return null;
+        return <Svg key={i} {...componentAtts}>{childs}</Svg>;
+      case 'g':
+        componentAtts = obtainComponentAtts(node, G_ATTS);
+        return <G key={i} {...componentAtts}>{childs}</G>;
+      case 'path':
+        componentAtts = obtainComponentAtts(node, PATH_ATTS);
+        return <Path key={i} {...componentAtts}>{childs}</Path>;
+      case 'circle':
+        componentAtts = obtainComponentAtts(node, CIRCLE_ATTS);
+        return <Circle key={i} {...componentAtts}>{childs}</Circle>;
+      case 'rect':
+        componentAtts = obtainComponentAtts(node, RECT_ATTS);
+        return <Rect key={i} {...componentAtts}>{childs}</Rect>;
+      case 'line':
+        componentAtts = obtainComponentAtts(node, LINE_ATTS);
+        return <Line key={i} {...componentAtts}>{childs}</Line>;
+      case 'defs':
+        return <Defs key={i}>{childs}</Defs>;
+      case 'linearGradient':
+        componentAtts = obtainComponentAtts(node, LINEARG_ATTS);
+        return <LinearGradient key={i} {...componentAtts}>{childs}</LinearGradient>;
+      case 'radialGradient':
+        componentAtts = obtainComponentAtts(node, RADIALG_ATTS);
+        return <RadialGradient key={i} {...componentAtts}>{childs}</RadialGradient>;
+      case 'stop':
+        componentAtts = obtainComponentAtts(node, STOP_ATTS);
+        return <Stop key={i} {...componentAtts}>{childs}</Stop>;
+      case 'ellipse':
+        componentAtts = obtainComponentAtts(node, ELLIPSE_ATTS);
+        return <Ellipse key={i} {...componentAtts}>{childs}</Ellipse>;
+      case 'polygon':
+        componentAtts = obtainComponentAtts(node, POLYGON_ATTS);
+        return <Polygon key={i} {...componentAtts}>{childs}</Polygon>;
+      case 'polyline':
+        componentAtts = obtainComponentAtts(node, POLYLINE_ATTS);
+        return <Polyline key={i} {...componentAtts}>{childs}</Polyline>;
+      case 'text':
+        componentAtts = obtainComponentAtts(node, TEXT_ATTS);
+        return <Text key={i} {...componentAtts}>{childs}</Text>;
+      case 'tspan':
+        componentAtts = obtainComponentAtts(node, TEXT_ATTS);
+        if (componentAtts.y) {
+          componentAtts.y = fixYPosition(componentAtts.y, node)
+        }
+        return <TSpan key={i} {...componentAtts}>{childs}</TSpan>;
+      default:
+        return null;
     }
   }
 
-  obtainComponentAtts({attributes}, enabledAttributes) {
+  function obtainComponentAtts({ attributes }, enabledAttributes) {
     const styleAtts = {};
 
-    if (this.state.fill && this.props.fillAll) {
-      styleAtts.fill = this.state.fill;
+    if (state.fill && props.fillAll) {
+      styleAtts.fill = state.fill;
     }
 
-    Array.from(attributes).forEach(({nodeName, nodeValue}) => {
+    Array.from(attributes).forEach(({ nodeName, nodeValue }) => {
       Object.assign(styleAtts, utils.transformStyle({
         nodeName,
         nodeValue,
-        fillProp: this.state.fill
+        fillProp: state.fill
       }));
     });
 
-     const componentAtts =  Array.from(attributes)
-      .map(utils.camelCaseNodeName)
-      .map(utils.removePixelsFromNodeValue)
-      .filter(utils.getEnabledAttributes(enabledAttributes.concat(COMMON_ATTS)))
-      .reduce((acc, {nodeName, nodeValue}) => {
-        acc[nodeName] = (this.state.fill && nodeName === 'fill' && nodeValue !== 'none') ? this.state.fill : nodeValue
-        return acc
-      }, {});
+    const componentAtts = Array.from(attributes)
+    .map(utils.camelCaseNodeName)
+    .map(utils.removePixelsFromNodeValue)
+    .filter(utils.getEnabledAttributes(enabledAttributes.concat(COMMON_ATTS)))
+    .reduce((acc, { nodeName, nodeValue }) => {
+      acc[nodeName] = (state.fill && nodeName === 'fill' && nodeValue !== 'none') ? state.fill : nodeValue
+      return acc
+    }, {});
     Object.assign(componentAtts, styleAtts);
 
     return componentAtts;
   }
 
-  inspectNode(node){
+  function inspectNode(node) {
     // Only process accepted elements
     if (!ACCEPTED_SVG_ELEMENTS.includes(node.nodeName)) {
       return null;
@@ -265,43 +238,42 @@ class SvgUri extends Component{
 
     // if have children process them.
     // Recursive function.
-    if (node.childNodes && node.childNodes.length > 0){
-        for (let i = 0; i < node.childNodes.length; i++){
-          const nodo = this.inspectNode(node.childNodes[i]);
-          if (nodo != null) {
-            arrayElements.push(nodo);
-          }
+    if (node.childNodes && node.childNodes.length > 0) {
+      for (let i = 0; i < node.childNodes.length; i++) {
+        const nodo = inspectNode(node.childNodes[i]);
+        if (nodo != null) {
+          arrayElements.push(nodo);
         }
+      }
     }
 
-    return this.createSVGElement(node, arrayElements);
+    return createSVGElement(node, arrayElements);
   }
 
-  render () {
+  const rootSVG = React.useMemo(() => {
     try {
-      if (this.state.svgXmlData == null) {
+      if (state.svgXmlData == null) {
         return null;
       }
-
-      const inputSVG = this.state.svgXmlData.substring(
-        this.state.svgXmlData.indexOf("<svg "),
-        (this.state.svgXmlData.indexOf("</svg>") + 6)
+      const inputSVG = state.svgXmlData.substring(
+        state.svgXmlData.indexOf("<svg "),
+        (state.svgXmlData.indexOf("</svg>") + 6)
       ).replace(/<!-(.*?)->/g, '');
 
       const doc = new xmldom.DOMParser().parseFromString(inputSVG);
 
-      const rootSVG = this.inspectNode(doc.childNodes[0]);
-
-      return(
-          <View style={this.props.style}>
-            {rootSVG}
-          </View>
-      );
-    } catch(e){
+      return inspectNode(doc.childNodes[0]);
+    }  catch (e) {
       console.error("ERROR SVG", e);
       return null;
     }
-  }
+  }, [state.svgXmlData, props.fill, props.width, props.height, props.fillAll])
+
+  return (
+    <View style={this.props.style}>
+      {rootSVG}
+    </View>
+  );
 }
 
 SvgUri.propTypes = {
